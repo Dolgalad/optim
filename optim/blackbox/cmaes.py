@@ -3,7 +3,9 @@ import numpy as np
 
 class CMAES:
     def __init__(self , n_samples = None):
+        self.it = 0
         self.n_samples = n_samples
+        self.history = {}
     def diagonal(self, d):
         x = np.eye(d.size)
         np.fill_diagonal(x, d)
@@ -53,9 +55,8 @@ class CMAES:
         chiN = np.sqrt(N)*(1. - 1./(4*N) + 1./(21.*N**2)) # Expectation of ||N(0,I)|| == normal(randn(N,1))
 
         # main loop
-        counteval = 0
-        while counteval < stopeval:
-            #print(counteval)
+        self.it= 0
+        while self.it< stopeval:
             # generate offspring
             #arx = np.random.multivariate_normal(xmean, sigma**2. * C, size=lambd)
             arx = np.zeros((lambd, N))
@@ -65,23 +66,28 @@ class CMAES:
                 arx[i,:] =temp # xmean + (sigma * np.dot(B, D * np.random.normal(size=(N,1)))).reshape(N)
             self.coerce_to_search_space(arx, search_space)
             arfitness = np.array([func(xi) for xi in arx])
-            counteval += lambd
+            self.it += lambd
 
             # sort by fitness and compute weighted mean
             arindex = np.argsort(arfitness)
             xold = xmean
             xmean = np.zeros(xold.shape)
             for i in range(mu):
-                xmean += arx[arindex[i]] * weights[i]
+                #print(xmean.shape, arx[arindex[i]].shape, weights[i].shape)
+                xmean += arx[arindex[i]].reshape(xmean.shape) * weights[i]
             #xmean = np.dot(arx[arindex[:mu],:].T, weights)
 
             # Cumulation : update evolution paths
             ps = (1. - cs)*ps + np.sqrt(cs*(2-cs)*mueff) * np.dot(invsqrtC, (xmean-xold) / sigma)
-            hsig = np.linalg.norm(ps) / np.sqrt(1 - (1-cs)**(2*counteval/lambd))/chiN < 1.4 / 2/(N+1)
+            hsig = np.linalg.norm(ps) / np.sqrt(1 - (1-cs)**(2*self.it/lambd))/chiN < 1.4 / 2/(N+1)
             pc = (1-cc)*pc + hsig * np.sqrt(cc*(2-cc)*mueff) * (xmean-xold) / sigma
 
             # Adapt covariance matrix C
-            artmp = (1./sigma) * arx[arindex[:mu],:] - xold
+            #print(arindex[:mu].shape,arx[arindex[:mu].reshape(mu)].shape, xold.shape, mu)
+            #artmp = (1./sigma) * arx[arindex[:mu],:] - xold
+            artmp = (1./sigma) * arx[arindex[:mu].reshape(mu)] - xold
+
+            #print(artmp.T.shape, self.diagonal(weights).shape, artmp.shape)
             aa = np.dot(artmp.T, np.dot(self.diagonal(weights), artmp))
             C = (1-c1-cmu) * C + c1 * (np.dot(pc, pc.T) + (1-hsig)*cc*(2-cc)*C) + \
                     cmu * np.dot(artmp.T, np.dot(self.diagonal(weights), artmp))
@@ -90,9 +96,9 @@ class CMAES:
             sigma = sigma * np.exp((cs/damps)*(np.linalg.norm(ps)/chiN - 1.))
 
             # Decomposition of C into B*diag(D**2)*B.T
-            if counteval - eigeneval > lambd/(c1+cmu)/N/10:
+            if self.it - eigeneval > lambd/(c1+cmu)/N/10:
                 try:
-                    eigeneval = counteval
+                    eigeneval = self.it 
                     C = np.triu(C) + np.triu(C,1)
                     D,B = np.linalg.eigh(C)
                     D = np.sqrt(self.diagonal(D))
@@ -101,7 +107,8 @@ class CMAES:
                     D = np.diag(D).reshape(N,1)
                 except Exception as e:
                     print(e)
-                    return xmean, arx[arindex[0]]
+                    #return xmean, arx[arindex[0]]
+                    return xmean
 
 
             # Break if fitness is good enough or condition exceeds 1e14, other termination method possible
@@ -113,8 +120,8 @@ class CMAES:
                     #print("Bad conditioned matrix")
                     pass
                 break
-        #print("Counteval : ", counteval, stopeval)
-        return xmean, arx[arindex[0]]
+        #return xmean, arx[arindex[0]]
+        return xmean
 
 if __name__=="__main__":
     x0 = np.random.random_sample(2)
